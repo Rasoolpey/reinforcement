@@ -7,3 +7,12 @@ class MyDenseLayer(tf.keras.layers.layer):
         #initialize weghts and bias
         self.w = self.add_weight([input_dim, output_dim])
         self.b = self.add_weight([1, output_dim])
+
+    def __call__(self, inputs):
+        # Forward propagate the inputs
+        z = tf.matmul(inputs,self.w) + self.b
+
+        #feed through a non-linear actication
+        output = tf.math.sigmoid(z)
+
+        return output
