@@ -1,16 +1,6 @@
-# This is a sample Python script.
-
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
-
-
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
-
-
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    print_hi('PyCharm')
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+import tensorflow as tf
+tf.keras.layers.Dense(units=2)
+model=tf.keras.Sequential([tf.keras.layers.Dense(n1),tf.keras.layers.Dense(n2),tf.keras.layers.Dense(2)])
+loss=tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(y,predicted))
+loss=tf.reduce_mean(tf.square(tf.subtract(y,predicted)))
+loss=tf.keras.losses.MSE(y,predicted)
