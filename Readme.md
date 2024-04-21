@@ -1,4 +1,7 @@
-# how to use the matlab and python integration code
+# matlab-python integration Reinforcement learning
+This code allows you to run simulink model as an environment and send and receive data to python synchronously to train your reinforcement model more reliably. 
+
+## how to use the matlab-python integration code
 before starting with this code you need to make sure that you have already installed matlab-python api
 to do so, follow the instruction below:
 
