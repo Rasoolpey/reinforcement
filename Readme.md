@@ -10,6 +10,4 @@ https://mathworks.com/help/matlab/matlab_external/install-the-matlab-engine-for-
 ## how to set up `matlab.ipynb` 
 in the `matlab api connection` section, change the address to the directory where you put your simulink file
 
-in the ` tcp connection` section, change the tcp ip to your own ip, in linux terminal you can write, `ip a` and under `inet` you can see your ip. (don't select 127.0.0.1 ip)
-
-you need to update simulink send and receive blocks ip with your own ip as well. 
+in the ` tcp connection` section, the defult ip address (127.0.0.1) has been selected, which supposedly work on any machine but in case it doesn't. change the tcp ip to your own ip, in linux terminal you can write, `ip a` and under `inet` you can find your ip. Plus, you need to update simulink send and receive blocks ip with your own ip as well. 
