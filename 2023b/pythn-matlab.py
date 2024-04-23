@@ -14,8 +14,8 @@ import matplotlib.pyplot as plt
 
 # matlab api connection
 eng = matlab.engine.start_matlab()
-eng.cd(r'C:\Users\pvm8318\Documents\NeoVim\Reinforcement')
-eng.addpath(r'C:\Users\pvm8318\Documents\NeoVim\Reinforcement')
+eng.cd(r'C:\Users\pvm8318\Documents\NeoVim\Reinforcement\2023b')
+eng.addpath(r'C:\Users\pvm8318\Documents\NeoVim\Reinforcement\2023b')
 def SimRun():
     eng.sim('Buck_Converter.slx')
     return
