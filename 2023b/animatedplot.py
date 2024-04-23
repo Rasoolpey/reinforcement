@@ -1,49 +1,45 @@
 import numpy as np
-
 import matplotlib.pyplot as plt
-from matplotlib import colors as mcolors
+from multiprocessing import Process, Queue  # Import the Queue class
 
-# Enable interactive mode
-plt.ion()
+def generate_data(i, queue):
+    x = []
+    y = []
+    z = []
+    h = []
 
-# Create an empty plot
-fig, ax = plt.subplots()
-ax2 = ax.twinx()  # Create a twin Axes sharing the x-axis
-ax.set_ylim(0, 1)
-# Set the limits for the left y-axis plot
+    for j in range(i * 10, (i + 1) * 10):
+        temp_y = np.random.random()
+        x.append(j)
+        y.append(temp_y)
+        z.append(((j / 10) ** 3 - 10 * j ** 2 + 100 * j - 1000) / 1000)
+        h.append((-(j / 10) ** 3 + 7 * j ** 2 + 100 * j - 1000) / 1000)
 
+    queue.put((x, y, z, h))
 
-x = []
-y = []
-z = []
+def plot_data(queue):
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1)
+    ax1.set_ylim(0, 1)
 
-for i in range(100):
-    temp_y = np.random.random()
-    x.append(i)
-    y.append(temp_y)
-    z.append(((i/10)**3-10*i**2+100*i-1000)/1000)
+    while True:
+        try:
+            x, y, z, h = queue.get(timeout=0.05)
+            ax1.plot(x, y, color='orangered')
+            ax2.plot(x, z, color='steelblue')
+            ax3.plot(x, h, color='gold')
+            plt.pause(0.05)
+        except queue.Empty:
+            break
 
-    # Update the plot with the new data
-    ax1.plot(x, y, color='orangered')
-    ax2.plot(x, z, color='steelblue')
+    plt.ioff()
+    plt.show()
 
-    # Set the labels for the left and right y-axes
-    ax1.set_ylabel('Left Y-axis', color='orangered')
-    ax2.set_ylabel('Right Y-axis', color='steelblue')
+if __name__ == "__main__":
+    data_queue = Queue()
+    process = Process(target=plot_data, args=(data_queue,))
+    process.start()
 
-    # Set the colors for the left and right y-axes
-    ax1.tick_params(axis='y', colors='orangered')
-    ax2.tick_params(axis='y', colors='steelblue')
+    for i in range(100):
+        generate_data(i, data_queue)
 
-    # Set the color of the y-axis frames
-    ax = plt.gca()
-    ax.spines['top'].set_color('gray')
-    ax.spines['bottom'].set_color('black')
-    ax.spines['left'].set_color('orangered')
-    ax.spines['right'].set_color('steelblue')
-
-    plt.pause(0.05)  # Pause to allow real-time update
-
-# Show the final plot
-plt.ioff()  # Disable interactive mode
-plt.show()
+    process.join()
