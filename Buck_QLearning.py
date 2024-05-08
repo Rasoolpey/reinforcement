@@ -68,12 +68,13 @@ def websocket ():
     s.listen(1)
     conn, addr = s.accept()
     return conn
+
 def rewardcal(x, u):
     V = x[0]
     IL = x[1]
     Q = 10*np.eye(2)  # State penalty matrix
     R = 1 
-    reward = -np.linalg.norm(x - np.array([Vref, ILref]))**2 
+    reward = -np.linalg.norm(V - Vref)**2 
     # reward = -np.linalg.norm(x - np.array([Vref, ILref]))**2 - u**2 * R
     return reward
 

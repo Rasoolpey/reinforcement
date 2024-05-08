@@ -35,6 +35,17 @@ def simulate_buck_converter(state, action):
     reward = ...  # Calculate the reward based on the next state
     return next_state, reward
 
+def NormalSequence(sample, Vref, seq_len):
+    mean = Vref
+    std = 3
+    sam = (sample - mean) / std
+    x = []
+    y = []
+    for i in range(len(data) - seq_len):
+        x.append(data[i:i + seq_len])
+        y.append(data[i + seq_len])
+    return np.array(x), np.array(y)
+
 # Training parameters
 state_dim = ...  # Dimension of the state vector
 action_dim = ...  # Dimension of the action vector
