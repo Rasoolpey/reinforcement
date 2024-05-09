@@ -16,8 +16,8 @@ print('Using device:', device)
 
 ## matlab api connection
 eng = matlab.engine.start_matlab()
-eng.cd(r'/home/pvm8318/Documents/Reinforcement/2023b')
-eng.addpath(r'/home/pvm8318/Documents/Reinforcement/2023b')
+eng.cd(r'/home/pvm8318/Documents/Reinforcement/reinforcement')
+eng.addpath(r'/home/pvm8318/Documents/Reinforcement/reinforcement')
 def SimRun():
     eng.sim('Buck_Converter.slx')
     return
@@ -28,7 +28,6 @@ DELIMITER = b'\n'
 TCP_IP = '156.62.80.83'
 TCP_PORT = 50000
 BUFFER_SIZE = MESSAGE_SIZE if MESSAGE_SIZE else 32  # Minimum for two doubles
-
 
 def send_data(conn, val):
     """Sends two double-precision numbers."""
@@ -44,23 +43,8 @@ def receive_data(conn):
 
     val1, val2, Time = struct.unpack('>ddd', data)
     return val1, val2, Time
-    
 
-## Buck converter parameters 
-Vref = 5
-u = 0
-R = 1.0  # Resistance
-L = 0.1  # Inductance
-C = 1e-3  # Capacitance
-Vin = 12.0  # Input voltage
-Vref = 5.0  # Reference output voltage.0
-# State-space representation of the buck converter
-A = np.array([[0, 1 / C], [-1 / L, -R / L]])
-B = np.array([[0], [1 / L]])
-#steady state calculation
-duty_cycle =Vref/Vin
-Iout = Vref/R
-ILref = Iout/duty_cycle
+# Define websocket function
 def websocket ():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind((TCP_IP, TCP_PORT))
@@ -69,6 +53,32 @@ def websocket ():
     conn, addr = s.accept()
     return conn
 
+#initialize and hyperparameters
+DISCOUNT = 0.99
+LEARNING_RATE = 0.1 
+epsilon = 0.1
+SHOW_EVERY = 2000
+num_episodes = 20000
+runtime = 10
+Vinit = 0
+Iinit = 0
+duty_step = np.linspace(0, 1, 201)  # 201 possible duty cycle values from 0 to 1
+
+## Buck converter parameters 
+Vref = 5
+# u = 0
+# R = 1.0  # Resistance
+# L = 0.1  # Inductance
+# C = 1e-3  # Capacitance
+# Vin = 12.0  # Input voltage
+# Vref = 5.0  # Reference output voltage.0
+# # State-space representation of the buck converter
+# A = np.array([[0, 1 / C], [-1 / L, -R / L]])
+# B = np.array([[0], [1 / L]])
+# #steady state calculation
+# duty_cycle =Vref/Vin
+# Iout = Vref/R
+# ILref = Iout/duty_cycle
 
 # Neural Network for Q-Learning
 class DQN(nn.Module):
@@ -162,15 +172,14 @@ def composite_reward(x, u, prev_u, prev_deviation):
 
 
 # defining is done function
-class EnvironmentMonitor:
+class DoneChecker:
     def __init__(self):
         self.t0 = None
+        self.desirable_band = [4.8, 5.2]
 
     def isdone(self, x, t):
-        desirable_band = [4.8, 5.2]
         V = x[0]
-
-        if V >= desirable_band[0] and V <= desirable_band[1]:
+        if V >= self.desirable_band[0] and V <= self.desirable_band[1]:
             if self.t0 is None:
                 self.t0 = t
             elif t - self.t0 >= 0.5:
@@ -180,7 +189,10 @@ class EnvironmentMonitor:
         
         return False
 
-def train_model(batch_size=32):
+done_checker = DoneChecker()
+
+# training DQN model
+def train_model(batch_size=64):
     if len(replay_buffer) < batch_size:
         return
     states, actions, rewards, next_states, dones = replay_buffer.sample(batch_size)
@@ -188,13 +200,13 @@ def train_model(batch_size=32):
     next_states = torch.FloatTensor(next_states).to(device)
     actions = torch.LongTensor(actions).to(device)
     rewards = torch.FloatTensor(rewards).to(device)
-    dones = torch.FloatTensor(dones).to(device)
+    dones = torch.tensor(dones, dtype=torch.bool).to(device)
 
     # Get current Q-values and next Q-values
     current_q_values = net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
     next_q_values = net(next_states).max(1)[0]
     next_q_values[dones] = 0.0  # Zero Q-values for terminal states
-    expected_q_values = rewards + 0.99 * next_q_values  # Assuming discount factor gamma = 0.99
+    expected_q_values = rewards + DISCOUNT * next_q_values  # Assuming discount factor gamma = 0.99
 
     # Loss and optimize
     loss = loss_fn(current_q_values, expected_q_values)
@@ -203,28 +215,94 @@ def train_model(batch_size=32):
     optimizer.step()
 
 
+# Define possible duty cycles
 
-# Simulation or training loop
-state = initial_state  # Define your initial state based on your system
-action = select_action(state)  # Select initial action using your strategy
+def select_action(state, epsilon):
+    """Selects an action using an epsilon-greedy policy."""
+    if np.random.random() < epsilon:  # With probability epsilon, select a random action
+        action_index = np.random.randint(0, len(duty_step))
+        return duty_step[action_index]  # Return the actual duty cycle value
+    else:  # Otherwise, select the action with the highest Q-value
+        state = torch.FloatTensor(state).unsqueeze(0).to(device)
+        with torch.no_grad():
+            q_values = net(state)
+        action_index = q_values.max(1)[1].item()  # Get index of the highest Q-value
+        return duty_step[action_index]  # Return the actual duty cycle value
+    
 
-for step in range(num_simulation_steps):
-    if step % 1000 == 0:  # Change action every 1000 steps
-        action = select_action(state)
-    
-    # Simulate action in the environment and obtain next state and reward
-    next_state, reward, done = environment.step(action)  # You'll need to define this method
-    
-    # Store in replay buffer
-    replay_buffer.push(state, action, reward, next_state, done)
+def plot_data(time, Vo, duty_cycle,episode,total_reward):
+    plt.close()
+    fig, ax = plt.subplots()
+    plt.title(f'Episode {episode} - Total Reward: {total_reward:.2f}')
+    ax2 = ax.twinx()  # Create a twin Axes sharing the x-axis
+    ax.plot(time, Vo, color='orangered')
+    ax2.plot(time, duty_cycle, color='steelblue')
+    ax.set_ylabel('Output Voltage', color='orangered')
+    ax2.set_ylabel('reward value', color='steelblue')
+    ax.tick_params(axis='y', colors='orangered')
+    ax2.tick_params(axis='y', colors='steelblue')
+    ax = plt.gca()
+    ax.spines['top'].set_color('gray')
+    ax.spines['bottom'].set_color('black')
+    ax.spines['left'].set_color('orangered')
+    ax.spines['right'].set_color('steelblue')
+    plt.savefig(f'plots/episode number {episode}.png')
 
-    # Train model periodically
-    if step % 20 == 0:  # Adjust training frequency as needed
-        train_model(64)
-    
-    state = next_state
-    
-    if done:
-        break
 
-print("Training completed.")
+
+
+# training loop
+for episode in range(num_episodes):
+    try:
+        conn.close()
+    except Exception as e:
+        print(f"Error closing connection: {e}")
+    t1 = threading.Thread(target=SimRun)
+    t1.start()
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future2 = executor.submit(websocket)
+        conn = future2.result()
+    # Reset the environment and get the initial state
+    state = np.array([Vinit, Iinit]) 
+    total_reward = 0
+    time = 0
+    action = select_action(state, epsilon)
+    prev_deviation = 0
+    prev_u = 0
+    Vo = []
+    rewardval = []
+    t=[]
+    iteration = 0
+    done = False
+    while time < runtime:
+        if done:
+            break
+        send_data(conn, action)
+        V, IL, Time = receive_data(conn)
+        next_state = np.array([V, IL])
+        done = done_checker.isdone(next_state, Time)
+        reward, _ = composite_reward(next_state, action, prev_u, prev_deviation)
+        prev_deviation = abs(next_state[0] - Vref)
+        prev_u = action
+        total_reward += reward
+        replay_buffer.push(state, action, reward, next_state, False)
+        if iteration % 1000 == 0:
+            train_model(128)
+            action = select_action(next_state, epsilon)
+
+        if iteration % 10 == 0:
+            t.append(Time)
+            Vo.append(V)
+            rewardval.append(reward)
+        # if iteration % 10000 == 0:
+        #     plot_data(t, Vo, rewardval,episode,total_reward)
+        state = next_state
+        time = Time
+        iteration += 1
+    if episode % 20 == 0:
+        plot_data(t, Vo, rewardval,episode,total_reward)
+    conn.close()
+    t1.join()
+
+    # plot_data(t, Vo, rewardval,episode,total_reward)
+
