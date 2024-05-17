@@ -3,29 +3,27 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
-import matlab.engine
-import socket, struct
 import threading
 import concurrent.futures
-from collections import deque
+import matlab.engine
+import socket
+import struct
 import random
+import time
+from collections import deque
+import scipy.io
 
 # Check for CUDA
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print('Using device:', device)
 
-## Matlab API connection
-eng = matlab.engine.start_matlab()
-eng.cd(r'/home/pvm8318/Documents/Reinforcement/reinforcement')
-eng.addpath(r'/home/pvm8318/Documents/Reinforcement/reinforcement')
-def SimRun():
-    eng.sim('Buck_Converter.slx')
-    return
+# Define the range of IP addresses
+ips = ["127.0.0.100", "127.0.0.101", "127.0.0.102", "127.0.0.103", "127.0.0.104",
+       "127.0.0.105", "127.0.0.106", "127.0.0.107", "127.0.0.108", "127.0.0.109"]
 
-## TCP Connection
+# TCP Connection Parameters
 MESSAGE_SIZE = 24  # Each double is 8 bytes + 1 byte for delimiter
 DELIMITER = b'\n'
-TCP_IP = '156.62.80.83'
 TCP_PORT = 50000
 BUFFER_SIZE = MESSAGE_SIZE if MESSAGE_SIZE else 32  # Minimum for two doubles
 
@@ -42,15 +40,6 @@ def receive_data(conn):
 
     val1, val2, Time = struct.unpack('>ddd', data)
     return val1, val2, Time
-
-# Define websocket function
-def websocket():
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind((TCP_IP, TCP_PORT))
-    print('Waiting for Simulink to start')
-    s.listen(1)
-    conn, addr = s.accept()
-    return conn
 
 # Initialize and hyperparameters
 DISCOUNT = 0.99
@@ -112,7 +101,7 @@ critic_optimizer = optim.Adam(critic.parameters(), lr=LEARNING_RATE)
 
 # Experience Replay
 class ReplayBuffer:
-    def __init__(self, capacity=10000):
+    def __init__(self, capacity=100000):
         self.buffer = deque(maxlen=capacity)
 
     def push(self, state, action, reward, next_state, done):
@@ -191,7 +180,7 @@ def soft_update(target, source, tau):
         target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
 # Training DDPG model
-def train_model(batch_size=64):
+def train_model(batch_size=512):
     if len(replay_buffer) < batch_size:
         return
     states, actions, rewards, next_states, dones = replay_buffer.sample(batch_size)
@@ -223,14 +212,12 @@ def train_model(batch_size=64):
     soft_update(actor_target, actor, tau)
     soft_update(critic_target, critic, tau)
 
-
 # Select action with exploration noise
 def select_action(state, noise_scale=0.1):
     state = torch.FloatTensor(state).unsqueeze(0).to(device)
     action = actor(state).cpu().detach().numpy()[0]
     action = np.clip(action + noise_scale * np.random.randn(action_dim), 0.0, 1.0)
     return action.item()  # Return as scalar for single action dimension
-
 
 def plot_data(time, Vo, duty_cycle, episode, total_reward):
     plt.close()
@@ -250,19 +237,38 @@ def plot_data(time, Vo, duty_cycle, episode, total_reward):
     ax.spines['right'].set_color('steelblue')
     plt.savefig(f'plots/episode_number_{episode}.png')
 
-# Training loop
-for episode in range(num_episodes):
-    try:
-        conn.close()
-    except Exception as e:
-        print(f"Error closing connection: {e}")
-    t1 = threading.Thread(target=SimRun)
-    t1.start()
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        future2 = executor.submit(websocket)
-        conn = future2.result()
+# Function to run a single simulation episode
+def run_simulations(model, ips):
+    print("Starting MATLAB engine and running simulations...")
+    eng = matlab.engine.start_matlab()
+    eng.cd(r'/home/pvm8318/Documents/Reinforcement/reinforcement')
+    eng.addpath(r'/home/pvm8318/Documents/Reinforcement/reinforcement')
+    print(f"Running run_simulations with model: {model} and ips: {ips}")
+    eng.run_simulations(model, ips, nargout=0)
+    eng.quit()
+    print("MATLAB simulations completed.")
+    
+    # Load and print simulation errors
+    errors = scipy.io.loadmat('simulation_errors.mat')['errors']
+    for i, error in enumerate(errors):
+        print(f"Simulation {i + 1} error: {error}")
+
+# Function to handle the websocket connection
+def websocket(ip):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind((ip, TCP_PORT))
+    print(f'Waiting for Simulink to start on {ip}')
+    s.listen(1)
+    conn, addr = s.accept()
+    print(f'TCP connection established on {ip}')
+    return conn
+
+# Function to run a simulation episode
+def run_simulation_episode(conn, ip, replay_buffer, episode):
+    print(f"Using established connection to {ip}:{TCP_PORT}")
+
     # Reset the environment and get the initial state
-    state = np.array([Vinit, Iinit]) 
+    state = np.array([Vinit, Iinit])
     total_reward = 0
     time = 0
     action = select_action(state)
@@ -273,6 +279,7 @@ for episode in range(num_episodes):
     t = []
     iteration = 0
     done = False
+    
     while time < runtime:
         if done:
             break
@@ -285,22 +292,58 @@ for episode in range(num_episodes):
         prev_u = action
         total_reward += reward
         replay_buffer.push(state, action, reward, next_state, done)
-        train_model(128)
         action = select_action(next_state)
 
         if iteration % 10 == 0:
             t.append(Time)
             Vo.append(V)
             rewardval.append(reward)
-
-
-        if iteration % 10000 == 0:
-            print(f"episode = {episode},time = {Time:.2f}")
+            print(f"Episode {episode}, IP {ip}, Time {Time}, Reward {reward}, V {V}, IL {IL}, Action {action}")
 
         state = next_state
         time = Time
         iteration += 1
+    
     if episode % 20 == 0:
         plot_data(t, Vo, rewardval, episode, total_reward)
+    
     conn.close()
-    t1.join()
+    print(f"Completed episode {episode} for IP {ip}")
+
+# Main execution
+if __name__ == "__main__":
+    model = 'Buck_Converter'
+    episode_per_ip = 20000 // len(ips)  # Number of episodes each IP should handle
+    for batch in range(episode_per_ip):
+        print(f"Starting batch {batch}")
+        
+        # Start the MATLAB simulation in a separate thread
+        t1 = threading.Thread(target=run_simulations, args=(model, ips))
+        t1.start()
+
+        print("Starting websocket connections...")
+
+        # Start the websocket connections concurrently
+        connections = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(websocket, ips[i]) for i in range(10)]
+            for future in concurrent.futures.as_completed(futures):
+                conn = future.result()
+                connections.append(conn)
+
+        # Add a small delay to ensure the TCP servers are ready
+        time.sleep(2)
+
+        # Use ThreadPoolExecutor to run the simulation episodes concurrently using the established connections
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(run_simulation_episode, connections[i], ips[i % len(ips)], replay_buffer, batch * len(ips) + i) for i in range(10)]
+            concurrent.futures.wait(futures)
+
+        # Wait for the MATLAB simulation thread to complete
+        t1.join()
+
+        # Train the model after collecting experiences from 10 simulations
+        print(f"Training model after batch {batch}")
+        train_model(512)
+        print(f"Completed training for batch {batch}")
+

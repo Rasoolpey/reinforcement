@@ -1,0 +1,27 @@
+function run_simulations(model, ips)
+    load_system(model);
+
+    send_block = [model, '/TCPSend'];
+    receive_block = [model, '/TCPReceive'];
+
+    simIn = repmat(Simulink.SimulationInput(model), 1, length(ips));
+    simIn(1) = simIn(1).setBlockParameter(send_block, 'Host', '127.0.0.100');
+    simIn(1) = simIn(1).setBlockParameter(receive_block, 'Host', '127.0.0.100');
+    
+    % Run simulations and capture output
+    simOut = parsim(simIn, 'ShowProgress', 'on');
+
+    % Check for errors in simulation outputs
+    errors = cell(1, length(simOut));
+    for i = 1:length(simOut)
+        if simOut(i).ErrorMessage
+            errors{i} = simOut(i).ErrorMessage;
+        else
+            errors{i} = 'No error';
+        end
+    end
+
+    % Save errors to a file or print them
+    save('simulation_errors.mat', 'errors');
+    disp(errors);
+end
